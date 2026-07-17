@@ -1,24 +1,35 @@
-# .gitignore
-
 # Virtual environment
 .venv/
+venv/
+env/
 
 # Environment variables
 .env
+.env.*
 
-# Data files
+# Data files — reproduced by pipeline
 data/raw/
 data/processed/
 data/*.duckdb
+*.parquet
 
 # Python cache
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 .pytest_cache/
+.ruff_cache/
 
-# Jupyter checkpoints
+# Jupyter
 .ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Prefect
+.prefect/
 
 # OS files
 .DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/settings.json
