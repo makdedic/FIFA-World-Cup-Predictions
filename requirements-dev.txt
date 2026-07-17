@@ -1,0 +1,14 @@
+# requirements-dev.txt — development only, not needed in production
+-r requirements.txt    # includes everything from requirements above
+
+# Testing
+pytest==8.3.5
+pytest-cov==6.1.0
+
+# Code quality
+ruff==0.11.9           # Fast linter + formatter (replaces black + flake8)
+pre-commit==4.2.0      # Runs ruff automatically before every git commit
+
+# Notebooks (exploration only)
+jupyter==1.1.1
+ipykernel==6.29.5
