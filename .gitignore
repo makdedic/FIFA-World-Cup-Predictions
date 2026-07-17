@@ -1,0 +1,24 @@
+# .gitignore
+
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+
+# Data files
+data/raw/
+data/processed/
+data/*.duckdb
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
