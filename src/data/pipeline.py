@@ -148,8 +148,9 @@ def task_load(
         )
         SELECT
             team,
-            LAST(elo ORDER BY date) AS current_elo,
-            COUNT(*) AS matches_played
+            LAST(elo ORDER BY date)  AS current_elo,
+            COUNT(*)                 AS matches_played,
+            COUNT(*) < 30            AS provisional
         FROM all_ratings
         GROUP BY team
         ORDER BY current_elo DESC
