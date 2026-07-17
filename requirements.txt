@@ -1,0 +1,18 @@
+# requirements.txt — production dependencies
+
+# Data pipeline
+prefect==3.3.7
+importlib-metadata==9.0.0  # undeclared runtime dep of prefect — required for prefect server start
+duckdb==1.2.2
+
+# Data processing
+pandas==2.2.3
+pyarrow==19.0.1        # Required for parquet support
+numpy==2.2.4
+
+# HTTP / downloading
+requests==2.32.3
+
+# Utilities
+python-dotenv==1.1.0   # For loading .env API keys
+loguru==0.7.3          # Better logging than Python's built-in
