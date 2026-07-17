@@ -1,7 +1,7 @@
 # requirements.txt — production dependencies
 
 # Data pipeline
-prefect==3.3.7
+prefect==3.7.8
 importlib-metadata==9.0.0  # undeclared runtime dep of prefect — required for prefect server start
 duckdb==1.2.2
 
