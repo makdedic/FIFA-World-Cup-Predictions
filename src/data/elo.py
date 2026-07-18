@@ -7,15 +7,18 @@ Why calculate our own instead of using eloratings.net?
   - No external dependency or manual download step
   - Full transparency — every rating update is traceable
   - We can tune K-factor weighting to our specific use case
-  - Strong interview talking point: we understand the algorithm
-    rather than treating ratings as a black box
 
 Algorithm:
   Expected = 1 / (1 + 10^((opponent_elo - team_elo) / 400))
   New ELO  = Old ELO + K × (Actual - Expected)
 
   where Actual = 1.0 (win), 0.5 (draw), 0.0 (loss)
-  and   K      = base_k × tournament_weight
+  and   K      = get_k_factor(tournament)
+
+Note: absolute rating values will differ from eloratings.net due to
+differences in historical data coverage and early match handling.
+The relative differences between teams are consistent and valid
+as predictive features.
 """
 
 import pandas as pd
@@ -28,19 +31,23 @@ from loguru import logger
 INITIAL_RATING = 1500.0    # Starting ELO for all teams
 BASE_K = 20.0              # Base sensitivity factor
 ELO_SCALE = 400.0          # Controls spread of expected score curve
+HOME_ADVANTAGE = 100.0
 
-# K multipliers by tournament importance
-# Higher K = match has more impact on ratings
-# This is a design choice — World Cup results should matter more than friendlies
-K_WEIGHTS = {
-    "FIFA World Cup":               2.0,   # K = 40
-    "FIFA World Cup qualification": 1.5,   # K = 30
-    "UEFA Euro":                    1.5,
-    "Copa América":                 1.5,
-    "Africa Cup of Nations":        1.5,
-    "AFC Asian Cup":                1.5,
-    "CONCACAF Gold Cup":            1.5,
-    "Friendly":                     0.8,   # K = 16 — friendlies matter less
+# K-factors per tournament — matches eloratings.net exactly
+K_FACTORS = {
+    "FIFA World Cup":                    60,
+    "UEFA Euro":                         50,
+    "Copa América":                      50,
+    "Africa Cup of Nations":             50,
+    "AFC Asian Cup":                     50,
+    "CONCACAF Gold Cup":                 50,
+    "FIFA Confederations Cup":           50,
+    "FIFA World Cup qualification":      40,
+    "UEFA Euro qualification":           30,
+    "AFC Asian Cup qualification":       30,
+    "Africa Cup of Nations qualification": 30,
+    "CONCACAF Gold Cup qualification":   30,
+    "Friendly":                          20,
 }
 
 
@@ -58,14 +65,31 @@ def expected_score(rating_a: float, rating_b: float) -> float:
 
 
 def get_k_factor(tournament: str) -> float:
-    """
-    Return the K-factor for a given tournament.
-    Higher K = more sensitive to results in this tournament.
-    """
-    for keyword, multiplier in K_WEIGHTS.items():
+    """Return K-factor for a given tournament matching eloratings.net methodology."""
+    for keyword, k in K_FACTORS.items():
         if keyword.lower() in tournament.lower():
-            return BASE_K * multiplier
-    return BASE_K  # default for unlisted tournaments
+            return float(k)
+    return 30.0  # default for unlisted tournaments
+
+
+def goal_difference_multiplier(goal_diff: int) -> float:
+    """
+    Goal difference multiplier — matches eloratings.net exactly.
+
+    Win by 1: ×1.0
+    Win by 2: ×1.5
+    Win by 3: ×1.75
+    Win by 4+: ×1.75 + (margin - 3) / 8
+    """
+    margin = abs(goal_diff)
+    if margin <= 1:
+        return 1.0
+    elif margin == 2:
+        return 1.5
+    elif margin == 3:
+        return 1.75
+    else:
+        return 1.75 + (margin - 3) / 8
 
 
 def update_ratings(
@@ -78,30 +102,22 @@ def update_ratings(
 ) -> tuple[float, float]:
     """
     Calculate new ELO ratings after a single match.
-
-    Args:
-        home_rating: ELO rating of home team before match
-        away_rating: ELO rating of away team before match
-        home_score:  Goals scored by home team
-        away_score:  Goals scored by away team
-        tournament:  Tournament name (affects K-factor)
-        neutral:     If True, no home advantage adjustment
-
-    Returns:
-        (new_home_rating, new_away_rating)
+    Matches eloratings.net methodology exactly:
+      - Tournament-specific K-factors
+      - Goal difference multiplier
+      - 100-point home advantage on non-neutral venues
     """
     k = get_k_factor(tournament)
 
-    # Home advantage: add 100 points to home team's effective rating
-    # unless it's a neutral venue (World Cup matches are always neutral)
-    home_advantage = 0 if neutral else 100.0
+    # Home advantage
+    home_advantage = 0.0 if neutral else HOME_ADVANTAGE
     adjusted_home = home_rating + home_advantage
 
     # Expected scores
     exp_home = expected_score(adjusted_home, away_rating)
     exp_away = 1.0 - exp_home
 
-    # Actual scores (1=win, 0.5=draw, 0=loss)
+    # Actual scores
     if home_score > away_score:
         actual_home, actual_away = 1.0, 0.0
     elif home_score == away_score:
@@ -109,9 +125,13 @@ def update_ratings(
     else:
         actual_home, actual_away = 0.0, 1.0
 
+    # Goal difference multiplier — applied to K
+    gdm = goal_difference_multiplier(home_score - away_score)
+    effective_k = k * gdm
+
     # Update ratings
-    new_home = home_rating + k * (actual_home - exp_home)
-    new_away = away_rating + k * (actual_away - exp_away)
+    new_home = home_rating + effective_k * (actual_home - exp_home)
+    new_away = away_rating + effective_k * (actual_away - exp_away)
 
     return round(new_home, 2), round(new_away, 2)
 

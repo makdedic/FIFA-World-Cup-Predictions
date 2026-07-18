@@ -37,20 +37,6 @@ TEAM_NAME_MAP = {
     "Zaire":                    "DR Congo",
 }
 
-# Tournaments that represent real competitive football
-# (used to weight ELO updates — friendlies count less)
-TOURNAMENT_WEIGHTS = {
-    "FIFA World Cup":                    1.5,
-    "UEFA Euro":                         1.3,
-    "Copa América":                      1.3,
-    "Africa Cup of Nations":             1.3,
-    "AFC Asian Cup":                     1.3,
-    "CONCACAF Gold Cup":                 1.3,
-    "FIFA World Cup qualification":      1.1,
-    "UEFA Euro qualification":           1.1,
-    "Friendly":                          0.8,
-}
-
 
 # ── Cleaning functions ────────────────────────────────────────────────────────
 
@@ -62,7 +48,6 @@ def clean_results(df: pd.DataFrame) -> pd.DataFrame:
       - outcome:         2=home win, 1=draw, 0=away win
       - goal_diff:       home_score - away_score
       - is_world_cup:    boolean flag
-      - tournament_weight: importance weight for ELO calculation
       - wc_stage:        World Cup stage (Group/R32/R16/QF/SF/Final)
     """
     logger.info(f"Cleaning results: {len(df):,} rows")
@@ -104,15 +89,6 @@ def clean_results(df: pd.DataFrame) -> pd.DataFrame:
     df["is_world_cup"] = df["tournament"].str.contains(
         "FIFA World Cup$", case=False, na=False
     ).astype(int)
-
-    # Tournament importance weight (used in ELO calculation)
-    df["tournament_weight"] = df["tournament"].map(
-        lambda t: next(
-            (w for keyword, w in TOURNAMENT_WEIGHTS.items()
-             if keyword.lower() in t.lower()),
-            1.0  # default weight for unlisted tournaments
-        )
-    )
 
     # World Cup stage classification
     stage_map = {
