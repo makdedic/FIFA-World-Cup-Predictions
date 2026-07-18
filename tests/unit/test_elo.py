@@ -60,6 +60,23 @@ def test_update_ratings_draw_home_advantage():
     assert away_new > 1500   # away team exceeded expectations
 
 
+def test_goal_difference_multiplier_increases_k():
+    """A 3-0 win should move ratings more than a 1-0 win."""
+    big_win_home, _ = update_ratings(1500, 1500, 3, 0, "FIFA World Cup", neutral=True)
+    small_win_home, _ = update_ratings(1500, 1500, 1, 0, "FIFA World Cup", neutral=True)
+    assert big_win_home > small_win_home
+
+
+def test_goal_difference_multiplier_values():
+    """Test multiplier values match eloratings.net specification exactly."""
+    from src.data.elo import goal_difference_multiplier
+    assert goal_difference_multiplier(1) == 1.0
+    assert goal_difference_multiplier(2) == 1.5
+    assert goal_difference_multiplier(3) == 1.75
+    assert goal_difference_multiplier(4) == pytest.approx(1.875)
+    assert goal_difference_multiplier(0) == 1.0  # draws
+
+
 def test_world_cup_k_higher_than_friendly():
     """World Cup matches should move ratings more than friendlies."""
     # Same result, different tournament
