@@ -8,7 +8,7 @@ Absolute values differ slightly from eloratings.net due to 150 years of
 historical data including high-scoring early matches — the relative differences
 between teams are internally consistent and used as features, not the absolute values.
 
-# Data
+## Data
 
 This project uses the International Football Results dataset.
 
