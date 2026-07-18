@@ -9,8 +9,9 @@ This will:
   1. Download raw data from martj42 GitHub (no API keys needed)
   2. Clean and standardise
   3. Calculate ELO ratings from scratch
-  4. Load everything into DuckDB
-  5. Create SQL views ready for feature engineering
+  4. Engineer form / streak / head-to-head features
+  5. Load everything into DuckDB
+  6. Create SQL views ready for modelling
 
 The entire pipeline runs in ~30 seconds on first run,
 ~5 seconds on subsequent runs (incremental loading).
@@ -24,6 +25,10 @@ from pathlib import Path
 from ingest import ingest_all
 from clean import clean_results, clean_goalscorers, clean_shootouts, save_processed
 from elo import calculate_elo, get_current_ratings
+
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))  # src/ — for the sibling `features` package
+from features.engineering import build_features
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).parent.parent.parent
@@ -81,9 +86,22 @@ def task_elo(clean_data: dict[str, pd.DataFrame]) -> pd.DataFrame:
     return matches_with_elo
 
 
+@task(name="Engineer features")
+def task_features(matches_with_elo: pd.DataFrame) -> pd.DataFrame:
+    logger = get_run_logger()
+    logger.info("Building form / streak / head-to-head features...")
+
+    match_features = build_features(matches_with_elo)
+    save_processed(match_features, "match_features", PROCESSED)
+
+    logger.info(f"Feature engineering complete — {len(match_features.columns)} columns")
+    return match_features
+
+
 @task(name="Load to DuckDB")
 def task_load(
     matches_with_elo: pd.DataFrame,
+    match_features: pd.DataFrame,
     clean_data: dict[str, pd.DataFrame],
 ) -> None:
     logger = get_run_logger()
@@ -95,6 +113,7 @@ def task_load(
     # Load tables
     tables = {
         "matches":          matches_with_elo,
+        "match_features":   match_features,
         "goalscorers":      clean_data["goalscorers"],
         "shootouts":        clean_data["shootouts"],
     }
@@ -177,11 +196,21 @@ def task_load(
         GROUP BY team_a, team_b
     """)
 
+    # View 4: World Cup matches with engineered features, ready for modelling
+    con.execute("""
+        CREATE OR REPLACE VIEW world_cup_match_features AS
+        SELECT *
+        FROM match_features
+        WHERE is_world_cup = 1
+        ORDER BY date
+    """)
+
     con.close()
     logger.info(
         f"DuckDB loaded successfully.\n"
-        f"  Tables: matches, goalscorers, shootouts\n"
-        f"  Views:  world_cup_matches, current_rankings, head_to_head\n"
+        f"  Tables: matches, match_features, goalscorers, shootouts\n"
+        f"  Views:  world_cup_matches, current_rankings, head_to_head, "
+        f"world_cup_match_features\n"
         f"  Database: {DB_PATH}"
     )
 
@@ -197,7 +226,8 @@ def run_pipeline():
     raw_data = task_ingest()
     clean_data = task_clean(raw_data)
     matches_with_elo = task_elo(clean_data)
-    task_load(matches_with_elo, clean_data)
+    match_features = task_features(matches_with_elo)
+    task_load(matches_with_elo, match_features, clean_data)
 
 
 if __name__ == "__main__":
