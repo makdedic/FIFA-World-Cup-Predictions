@@ -116,6 +116,25 @@ stable exactly when a tournament is at its most decisive stage. Not yet
 addressed — candidate fixes include capping/log-scaling the streak features
 or bucketing them into coarser bins.
 
+### Known limitation: draws predicted for knockout matches
+
+Knockout matches (Round of 16 onward) can't actually end in a draw — a level
+score after normal/extra time goes to a penalty shootout, so there's always
+a winner. The model doesn't know this and happily predicts a draw probability
+for a Round of 16 fixture same as it would for a group-stage or friendly match.
+
+Cause: `outcome` is derived purely from normal-time `home_score`/`away_score`
+(`src/data/clean.py`), so a knockout match settled on penalties is currently
+labelled a draw in training data — the real winner lives in `shootouts.csv`
+but isn't merged in. Worse, there's currently no reliable way to even identify
+*which* historical matches were knockout ties: `wc_stage` is a stub, always
+`"Group"`, because the source dataset has no stage column (see the comment
+in `clean_results`). Properly fixing this needs, in order: (1) real per-match
+stage data, (2) merging `shootouts.csv` to recover the true winner for drawn
+knockout matches, then (3) either a separate model trained on knockout ties
+only, or a serving-time reallocation of draw probability for knockout
+fixtures. Not yet addressed.
+
 ## Data
 
 This project uses the International Football Results dataset.
