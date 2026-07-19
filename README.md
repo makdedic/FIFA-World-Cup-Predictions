@@ -95,6 +95,27 @@ sign-flipped output. Fixed two ways:
   home/away orderings for neutral matches and averages them — exact by
   construction, independent of what the model actually learned.
 
+### Known limitation: instability late in a knockout run
+
+Predictions can swing sharply from one `as_of_date` to the next when the
+cutoff crosses a match either team played — expected in general (ELO/form
+legitimately update), but the swing is often larger than the ELO change alone
+would suggest. Example: moving the cutoff one day past a real Argentina 2–1
+England semi-final changed `elo_diff` by a reasonable +50, but `win_streak_diff`
+jumped from 9 to 14 and `unbeaten_streak_diff` from 5 to 14 — and the model's
+predicted draw probability jumped from 26% to 50%.
+
+Cause: by the semi-final/final stage, both remaining teams have long unbroken
+win streaks by construction (you can't reach the final without one), pushing
+streak features into a region that's rare in training — only 4.4% of matches
+(2,198 of 49,519) have `|win_streak_diff|` or `|unbeaten_streak_diff| ≥ 10`.
+Tree-based models make discontinuous, threshold-based splits, so landing in
+that thin, high-variance region can produce an output swing disproportionate
+to the actual size of the underlying event. Net effect: predictions are least
+stable exactly when a tournament is at its most decisive stage. Not yet
+addressed — candidate fixes include capping/log-scaling the streak features
+or bucketing them into coarser bins.
+
 ## Data
 
 This project uses the International Football Results dataset.
