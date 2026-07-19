@@ -13,6 +13,9 @@ data/processed/
 data/*.duckdb
 *.parquet
 
+# Trained models — reproduced by src/model/train.py
+models/
+
 # Python cache
 __pycache__/
 *.py[cod]
