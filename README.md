@@ -51,9 +51,49 @@ Two ways to predict:
   knowing only what was known as of this date" — retrains on the spot using
   only matches strictly before `as_of_date`
 
+### Command line
+
+```
+# One-time setup: build the database, then (optionally) cache a production model
+python src/data/pipeline.py
+python src/model/train.py
+
+# Fast path — uses everything known right now
+python src/model/predict.py France Brazil --latest
+
+# "As of" a specific date — retrains using only matches before it
+python src/model/predict.py Argentina "Saudi Arabia" 2022-11-20
+
+# Neutral venue is the default; add --not-neutral for a true home fixture,
+# --tournament to change context (default "FIFA World Cup")
+python src/model/predict.py England Germany 2018-06-01 --not-neutral --tournament Friendly
+```
+
+Team names must match the dataset's standardised naming (`TEAM_NAME_MAP` in
+`src/data/clean.py`) — e.g. `"USA"` not `"United States"`. Quote names with
+spaces, as with `"Saudi Arabia"` above.
+
 Model quality is evaluated with time-based holdouts (train on everything before
 a World Cup, test on that World Cup) rather than a random split, which would
-leak future form/ELO into training.
+leak future form/ELO into training. On the 2022 World Cup holdout, the model
+(51.6% accuracy) is roughly tied with a naive "pick the ELO favourite" baseline
+(51.6%) and beats a majority-class baseline (43.8%) — a useful sanity check
+before trusting it over simpler heuristics.
+
+### Neutral-venue symmetry
+
+On a neutral pitch, which team the data happens to label "home" is arbitrary
+and shouldn't change the predicted odds. It did — up to 36 percentage points
+on some matchups — because every model feature is a home-minus-away diff, and
+nothing forces a tree-based model to treat a sign-flipped input as a
+sign-flipped output. Fixed two ways:
+
+- **Training**: `augment_neutral_matches` (`src/model/train.py`) mirrors every
+  `neutral=True` training row (diffs negated, outcome flipped, draws
+  unchanged) so the model has explicit both-direction examples to learn from.
+- **Serving**: `predict_with_model` (`src/model/predict.py`) predicts both
+  home/away orderings for neutral matches and averages them — exact by
+  construction, independent of what the model actually learned.
 
 ## Data
 

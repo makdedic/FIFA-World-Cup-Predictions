@@ -27,8 +27,8 @@ while a user browses many matchups:
     predict_with_model() cheaply per matchup against that cached model.
 
 Run with:
-    python src/model/predict.py 2026-07-01 France Brazil
-    python src/model/predict.py --latest France Brazil
+    python src/model/predict.py France Brazil 2026-07-01
+    python src/model/predict.py France Brazil --latest
 """
 
 import re
