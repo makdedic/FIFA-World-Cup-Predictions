@@ -129,6 +129,26 @@ def test_predict_latest_falls_back_when_no_saved_model(matches, monkeypatch, tmp
     assert result["as_of_date"] == str((matches["date"].max() + pd.Timedelta(days=1)).date())
 
 
+def test_is_knockout_zeroes_draw_and_splits_it_evenly(matches):
+    """The draw mass should move entirely and evenly into home/away, probabilities still summing to 1."""
+    without = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches)
+    with_knockout = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches, is_knockout=True)
+
+    assert with_knockout["draw_prob"] == 0.0
+    total = with_knockout["home_win_prob"] + with_knockout["draw_prob"] + with_knockout["away_win_prob"]
+    assert total == pytest.approx(1.0, abs=1e-6)
+
+    half_draw = without["draw_prob"] / 2
+    assert with_knockout["home_win_prob"] == pytest.approx(without["home_win_prob"] + half_draw, abs=1e-4)
+    assert with_knockout["away_win_prob"] == pytest.approx(without["away_win_prob"] + half_draw, abs=1e-4)
+
+
+def test_is_knockout_is_a_noop_by_default(matches):
+    """is_knockout defaults to False — existing callers must be unaffected."""
+    result = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches)
+    assert result["draw_prob"] > 0.0
+
+
 def test_predict_latest_uses_saved_model_when_available(matches, monkeypatch):
     """When a production model IS found, predict_latest must use it — not silently retrain."""
     import src.model.predict as predict_mod

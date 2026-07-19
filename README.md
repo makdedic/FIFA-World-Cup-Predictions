@@ -67,6 +67,9 @@ python src/model/predict.py Argentina "Saudi Arabia" 2022-11-20
 # Neutral venue is the default; add --not-neutral for a true home fixture,
 # --tournament to change context (default "FIFA World Cup")
 python src/model/predict.py England Germany 2018-06-01 --not-neutral --tournament Friendly
+
+# Knockout tie — can't end in a draw, so that probability splits into home/away
+python src/model/predict.py Argentina "Saudi Arabia" 2022-11-20 --knockout
 ```
 
 Team names must match the dataset's standardised naming (`TEAM_NAME_MAP` in
@@ -116,24 +119,39 @@ stable exactly when a tournament is at its most decisive stage. Not yet
 addressed — candidate fixes include capping/log-scaling the streak features
 or bucketing them into coarser bins.
 
-### Known limitation: draws predicted for knockout matches
+### Known limitation: draws predicted for knockout matches (partially addressed)
 
 Knockout matches (Round of 16 onward) can't actually end in a draw — a level
-score after normal/extra time goes to a penalty shootout, so there's always
-a winner. The model doesn't know this and happily predicts a draw probability
-for a Round of 16 fixture same as it would for a group-stage or friendly match.
+score after extra time goes to a penalty shootout, so there's always a
+winner. The model doesn't inherently know this and, by default, predicts a
+draw probability for a Round of 16 fixture same as it would for a
+group-stage or friendly match.
 
-Cause: `outcome` is derived purely from normal-time `home_score`/`away_score`
-(`src/data/clean.py`), so a knockout match settled on penalties is currently
-labelled a draw in training data — the real winner lives in `shootouts.csv`
-but isn't merged in. Worse, there's currently no reliable way to even identify
-*which* historical matches were knockout ties: `wc_stage` is a stub, always
-`"Group"`, because the source dataset has no stage column (see the comment
-in `clean_results`). Properly fixing this needs, in order: (1) real per-match
-stage data, (2) merging `shootouts.csv` to recover the true winner for drawn
-knockout matches, then (3) either a separate model trained on knockout ties
-only, or a serving-time reallocation of draw probability for knockout
-fixtures. Not yet addressed.
+`home_score`/`away_score` (and therefore `outcome`) already reflect the score
+**after extra time**, not just 90 minutes — confirmed by cross-referencing
+`shootouts.csv`: the 2022 final is recorded 3-3, the real post-extra-time
+scoreline, before Argentina won on penalties. That means `home_win`/`away_win`
+already fully account for team strength across a full 120 minutes of play —
+nothing is missing there. What's left in `draw`, specifically for a knockout
+match, is purely "still level after 120 minutes," i.e. it goes to a penalty
+shootout — and shootouts are well-documented as close to a coin flip
+regardless of team quality, a fundamentally different contest than 120
+minutes of open play.
+
+**Fix (heuristic, not a trained model change)**: `predict_with_model` /
+`predict_match` / `predict_latest` accept `is_knockout=True`
+(CLI: `--knockout`). When set, the draw probability is split *evenly* into
+home/away rather than reallocated proportionally to the existing win/loss
+split — proportional would double-count team strength the model has already
+captured in reaching that draw estimate.
+
+This requires the caller to say `is_knockout=True` explicitly — there's still
+no automatic way to detect knockout stage from the data, since `wc_stage` is
+a stub, always `"Group"` (the source dataset has no stage column; see the
+comment in `clean_results`). A full fix would still need real per-match stage
+data to auto-detect this, plus merging `shootouts.csv` into training so the
+model itself — not just a serving-time patch — learns the knockout-specific
+relationship.
 
 ## Data
 

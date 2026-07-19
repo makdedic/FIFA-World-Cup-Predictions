@@ -168,6 +168,7 @@ def predict_with_model(
     as_of_date: str,
     neutral: bool = True,
     tournament: str = "FIFA World Cup",
+    is_knockout: bool = False,
 ) -> dict:
     """
     Win/draw/loss probabilities for home_team vs away_team against an
@@ -189,6 +190,21 @@ def predict_with_model(
     augment_neutral_matches) so the model is better calibrated to begin
     with — but that's a training-quality improvement, not a guarantee; the
     averaging here is what actually makes the output exactly symmetric.
+
+    is_knockout=True is a heuristic patch, not a validated model fix — see
+    the "Known limitation: draws predicted for knockout matches" section of
+    the README. `outcome` in the training data already reflects the score
+    AFTER extra time (confirmed against shootouts.csv: e.g. the 2022 final
+    is recorded 3-3, the real post-ET scoreline, not 90 minutes), so
+    home_win/away_win already fully account for team strength across a full
+    120 minutes — nothing in "draw" is unaccounted-for skill. What's left in
+    "draw" for a knockout match is purely "still level after 120 minutes,"
+    i.e. it goes to a penalty shootout — and shootouts are close to a coin
+    flip regardless of team quality (a fundamentally different, much less
+    skill-driven contest than 120 minutes of open play). So we split that
+    remaining draw probability evenly between home_win and away_win rather
+    than reallocating it proportionally, which would double-count team
+    strength the model has already captured.
     """
     as_of_date = pd.Timestamp(as_of_date)
     proba, home_elo, away_elo = _raw_proba(
@@ -203,6 +219,11 @@ def predict_with_model(
         draw = (proba[1] + swapped_proba[1]) / 2
         home_win = (proba[2] + swapped_proba[0]) / 2
         proba = (away_win, draw, home_win)
+
+    if is_knockout:
+        away_win, draw, home_win = proba
+        half_draw = draw / 2
+        proba = (away_win + half_draw, 0.0, home_win + half_draw)
 
     result = {
         "home_team": home_team,
@@ -233,6 +254,7 @@ def predict_match(
     as_of_date: str,
     neutral: bool = True,
     tournament: str = "FIFA World Cup",
+    is_knockout: bool = False,
     matches: pd.DataFrame | None = None,
     db_path: Path = DB_PATH,
 ) -> dict:
@@ -245,7 +267,7 @@ def predict_match(
     model, history = train_as_of(as_of_date, matches=matches, db_path=db_path)
     return predict_with_model(
         model, history, home_team, away_team, as_of_date,
-        neutral=neutral, tournament=tournament,
+        neutral=neutral, tournament=tournament, is_knockout=is_knockout,
     )
 
 
@@ -259,6 +281,7 @@ def predict_latest(
     away_team: str,
     neutral: bool = True,
     tournament: str = "FIFA World Cup",
+    is_knockout: bool = False,
     matches: pd.DataFrame | None = None,
     db_path: Path = DB_PATH,
     models_dir: Path = MODELS_DIR,
@@ -285,7 +308,7 @@ def predict_latest(
 
     return predict_with_model(
         model, matches, home_team, away_team, as_of_date,
-        neutral=neutral, tournament=tournament,
+        neutral=neutral, tournament=tournament, is_knockout=is_knockout,
     )
 
 
@@ -303,12 +326,18 @@ if __name__ == "__main__":
     parser.add_argument("--latest", action="store_true", help="Use the fast pre-trained production model")
     parser.add_argument("--tournament", default="FIFA World Cup")
     parser.add_argument("--not-neutral", action="store_true", help="Match is at home_team's home ground")
+    parser.add_argument(
+        "--knockout", action="store_true",
+        help="Match can't end in a draw (goes to extra time + penalties) — "
+             "splits the draw probability evenly into home/away instead",
+    )
     args = parser.parse_args()
 
     if args.latest:
         predict_latest(
             args.home_team, args.away_team,
             neutral=not args.not_neutral, tournament=args.tournament,
+            is_knockout=args.knockout,
         )
     else:
         if not args.as_of_date:
@@ -316,4 +345,5 @@ if __name__ == "__main__":
         predict_match(
             args.home_team, args.away_team, args.as_of_date,
             neutral=not args.not_neutral, tournament=args.tournament,
+            is_knockout=args.knockout,
         )
