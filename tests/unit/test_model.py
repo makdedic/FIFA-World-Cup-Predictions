@@ -4,7 +4,9 @@ import pandas as pd
 import pytest
 from src.model.train import (
     add_match_importance,
+    augment_neutral_matches,
     baseline_accuracies,
+    DIFF_FEATURES,
     evaluate_on_world_cup,
     FEATURE_COLUMNS,
 )
@@ -117,3 +119,79 @@ def test_feature_columns_exclude_leakage():
         "home_elo_after", "away_elo_after",
     }
     assert leakage_columns.isdisjoint(FEATURE_COLUMNS)
+
+
+@pytest.fixture
+def mixed_neutral_df():
+    """
+    Two neutral rows and one non-neutral row, distinguishable by elo_diff/outcome.
+    Diff features use a non-zero value (0.1, 0.2, 0.3) — negating 0.0 would
+    trivially "pass" a broken sign-flip, so 0.0 can't catch that bug.
+    """
+    return pd.DataFrame({
+        "date": pd.to_datetime(["2021-01-01", "2021-02-01", "2021-03-01"]),
+        "home_team": ["Brazil", "France", "Spain"],
+        "away_team": ["Argentina", "Germany", "Italy"],
+        "tournament": ["FIFA World Cup", "FIFA World Cup", "Friendly"],
+        "neutral": [True, True, False],
+        "is_world_cup": [1, 1, 0],
+        "match_importance": [60.0, 60.0, 20.0],
+        "outcome": [2, 1, 0],  # home win, draw, away win
+        "elo_diff": [80.0, 40.0, -40.0],
+        **{col: [0.1, 0.2, 0.3] for col in [
+            "days_since_last_match_diff", "win_streak_diff", "unbeaten_streak_diff",
+            "h2h_matches_played_diff", "h2h_win_rate_diff",
+            "form_points_avg_5_diff", "form_goals_for_avg_5_diff",
+            "form_goals_against_avg_5_diff", "form_win_rate_5_diff",
+            "form_points_avg_10_diff", "form_goals_for_avg_10_diff",
+            "form_goals_against_avg_10_diff", "form_win_rate_10_diff",
+        ]},
+    })
+
+
+def test_augment_neutral_matches_doubles_only_neutral_rows(mixed_neutral_df):
+    result = augment_neutral_matches(mixed_neutral_df)
+    assert len(result) == len(mixed_neutral_df) + 2  # only the 2 neutral rows get mirrored
+    assert (result["neutral"] == False).sum() == 1  # noqa: E712 — non-neutral row untouched
+
+
+def test_augment_neutral_matches_negates_diff_features(mixed_neutral_df):
+    result = augment_neutral_matches(mixed_neutral_df)
+    mirrored = result.iloc[len(mixed_neutral_df):]  # the appended rows
+    original_brazil_row = mixed_neutral_df.iloc[0]
+    mirrored_row = mirrored[
+        (mirrored["home_team"] == "Argentina") & (mirrored["away_team"] == "Brazil")
+    ].iloc[0]
+    for col in DIFF_FEATURES:
+        assert mirrored_row[col] == pytest.approx(-original_brazil_row[col])
+
+
+def test_augment_neutral_matches_flips_outcome_preserves_draw(mixed_neutral_df):
+    result = augment_neutral_matches(mixed_neutral_df)
+    mirrored = result.iloc[len(mixed_neutral_df):]
+
+    home_win_mirror = mirrored[mirrored["away_team"] == "Brazil"].iloc[0]  # was home win (2)
+    draw_mirror = mirrored[mirrored["away_team"] == "France"].iloc[0]      # was draw (1)
+    assert home_win_mirror["outcome"] == 0
+    assert draw_mirror["outcome"] == 1
+
+
+def test_augment_neutral_matches_preserves_match_context(mixed_neutral_df):
+    """Mirrored rows keep the same neutral/is_world_cup/match_importance — only diffs/outcome/teams change."""
+    result = augment_neutral_matches(mixed_neutral_df)
+    mirrored_row = result.iloc[len(mixed_neutral_df):].iloc[0]
+    assert mirrored_row["neutral"] == True  # noqa: E712
+    assert mirrored_row["is_world_cup"] == 1
+    assert mirrored_row["match_importance"] == 60.0
+
+
+def test_augment_neutral_matches_noop_when_nothing_neutral():
+    df = pd.DataFrame({
+        "date": pd.to_datetime(["2021-01-01"]),
+        "home_team": ["Brazil"], "away_team": ["Argentina"],
+        "neutral": [False], "is_world_cup": [0], "match_importance": [20.0],
+        "outcome": [2], "elo_diff": [50.0],
+        **_diff_cols(0.0),
+    })
+    result = augment_neutral_matches(df)
+    assert len(result) == len(df)

@@ -42,7 +42,7 @@ from loguru import logger
 from xgboost import XGBClassifier
 
 sys.path.insert(0, str(Path(__file__).parent))  # src/model/ — for the sibling `train` module
-from train import FEATURE_COLUMNS, make_xy, train_xgb
+from train import FEATURE_COLUMNS, add_match_importance, augment_neutral_matches, make_xy, train_xgb
 
 sys.path.insert(0, str(Path(__file__).parent.parent))  # src/ — for sibling `data`/`features` packages
 from data.elo import INITIAL_RATING, get_k_factor
@@ -102,8 +102,8 @@ def train_as_of(
     if history.empty:
         raise ValueError(f"No matches before {as_of_date.date()} — nothing to train on")
 
-    train_df = build_features(history)
-    train_df["match_importance"] = train_df["tournament"].apply(get_k_factor)
+    train_df = add_match_importance(build_features(history))
+    train_df = augment_neutral_matches(train_df)
 
     X_train, y_train = make_xy(train_df)
     model = train_xgb(X_train, y_train)
@@ -112,22 +112,20 @@ def train_as_of(
 
 # ── Prediction (the cheap, per-matchup step) ────────────────────────────────────
 
-def predict_with_model(
+def _raw_proba(
     model: XGBClassifier,
     history: pd.DataFrame,
     home_team: str,
     away_team: str,
-    as_of_date: str,
-    neutral: bool = True,
-    tournament: str = "FIFA World Cup",
-) -> dict:
+    as_of_date: pd.Timestamp,
+    neutral: bool,
+    tournament: str,
+) -> tuple:
     """
-    Win/draw/loss probabilities for home_team vs away_team against an
-    already-trained model, using `history` (matches strictly before
-    as_of_date — same slice train_as_of trained on) to compute ELO and
-    engineered features for the hypothetical matchup.
+    [away_win, draw, home_win] for exactly this home/away ordering — no
+    symmetry correction. Not part of the public API; see predict_with_model,
+    which is what actually enforces neutral-venue symmetry.
     """
-    as_of_date = pd.Timestamp(as_of_date)
     home_elo = _elo_as_of(history, home_team)
     away_elo = _elo_as_of(history, away_team)
 
@@ -159,6 +157,52 @@ def predict_with_model(
     # boxed as dtype=object — cast to float or XGBoost rejects it as non-numeric.
     X_pred = predict_row[FEATURE_COLUMNS].to_frame().T.astype(float)
     proba = model.predict_proba(X_pred)[0]
+    return proba, home_elo, away_elo
+
+
+def predict_with_model(
+    model: XGBClassifier,
+    history: pd.DataFrame,
+    home_team: str,
+    away_team: str,
+    as_of_date: str,
+    neutral: bool = True,
+    tournament: str = "FIFA World Cup",
+) -> dict:
+    """
+    Win/draw/loss probabilities for home_team vs away_team against an
+    already-trained model, using `history` (matches strictly before
+    as_of_date — same slice train_as_of trained on) to compute ELO and
+    engineered features for the hypothetical matchup.
+
+    On a neutral pitch, which team is arbitrarily labelled "home" in the
+    data shouldn't change the odds — but every diff feature flips sign
+    under a home/away swap, and XGBoost has no constraint forcing it to
+    treat a sign-flipped input as a sign-flipped output. Empirically it
+    doesn't: swapping home/away for the same two teams under neutral=True
+    moved a team's win probability by 10.7pp on average (up to 36pp) across
+    a sample of top-team matchups. So for neutral=True, we predict both
+    orderings and average them — exact by construction, not a heuristic.
+    Non-neutral matches skip this (real home advantage IS asymmetric).
+
+    train_as_of() also mirrors neutral training rows (train.py's
+    augment_neutral_matches) so the model is better calibrated to begin
+    with — but that's a training-quality improvement, not a guarantee; the
+    averaging here is what actually makes the output exactly symmetric.
+    """
+    as_of_date = pd.Timestamp(as_of_date)
+    proba, home_elo, away_elo = _raw_proba(
+        model, history, home_team, away_team, as_of_date, neutral, tournament
+    )
+
+    if neutral:
+        swapped_proba, _, _ = _raw_proba(
+            model, history, away_team, home_team, as_of_date, neutral, tournament
+        )
+        away_win = (proba[0] + swapped_proba[2]) / 2
+        draw = (proba[1] + swapped_proba[1]) / 2
+        home_win = (proba[2] + swapped_proba[0]) / 2
+        proba = (away_win, draw, home_win)
 
     result = {
         "home_team": home_team,
