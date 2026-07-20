@@ -12,6 +12,7 @@ Run with:
     streamlit run app.py
 """
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,12 +21,15 @@ import pandas as pd
 import streamlit as st
 from loguru import logger
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))  # src/ — for the `model` package
+PROJECT_ROOT = Path(__file__).parent
+
+sys.path.insert(0, str(PROJECT_ROOT / "src"))  # src/ — for the `model` package
 logger.remove()  # quiet pipeline/model INFO logs in the Streamlit console
 
 from data.elo import K_FACTORS  # noqa: E402
 from model.predict import (  # noqa: E402
     DB_PATH,
+    MODELS_DIR,
     get_all_teams,
     load_matches,
     load_production_model,
@@ -71,14 +75,30 @@ def cached_prediction(_model, _history, home_team, away_team, as_of_date, neutra
     )
 
 
-# ── Guard: pipeline must have been run at least once ────────────────────────
+# ── Bootstrap: build the database/model on first boot if missing ────────────
+# A fresh deploy (e.g. Streamlit Community Cloud) clones the repo with no
+# data/ or models/ — both are gitignored, reproduced by these scripts rather
+# than committed. Self-heal here instead of just erroring, since a deployed
+# visitor has no way to run a separate script themselves. sys.executable
+# guarantees the SAME Python/venv the app itself is running under.
+
+def _run_setup_script(relative_path: str, label: str) -> None:
+    result = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / relative_path)],
+        capture_output=True, text=True, cwd=PROJECT_ROOT,
+    )
+    if result.returncode != 0:
+        st.error(f"{label} failed:\n```\n{result.stderr[-2000:]}\n```")
+        st.stop()
+
 
 if not DB_PATH.exists():
-    st.error(
-        f"Database not found at `{DB_PATH}`. Run `python src/data/pipeline.py` "
-        "from the project root first."
-    )
-    st.stop()
+    with st.spinner("First-time setup: building the database (~30s, one-time)..."):
+        _run_setup_script("src/data/pipeline.py", "Database setup")
+
+if not (MODELS_DIR / "outcome_model.joblib").exists():
+    with st.spinner("First-time setup: training the production model (~10s, one-time)..."):
+        _run_setup_script("src/model/train.py", "Model training")
 
 matches = cached_matches()
 teams = get_all_teams(matches)
