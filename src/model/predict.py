@@ -38,11 +38,19 @@ from pathlib import Path
 import duckdb
 import joblib
 import pandas as pd
+import xgboost as xgb
 from loguru import logger
 from xgboost import XGBClassifier
 
 sys.path.insert(0, str(Path(__file__).parent))  # src/model/ — for the sibling `train` module
-from train import FEATURE_COLUMNS, add_match_importance, augment_neutral_matches, make_xy, train_xgb
+from train import (
+    FEATURE_COLUMNS,
+    FEATURE_LABELS,
+    add_match_importance,
+    augment_neutral_matches,
+    make_xy,
+    train_xgb,
+)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))  # src/ — for sibling `data`/`features` packages
 from data.elo import INITIAL_RATING, get_k_factor
@@ -136,8 +144,12 @@ def _raw_proba(
 ) -> tuple:
     """
     [away_win, draw, home_win] for exactly this home/away ordering — no
-    symmetry correction. Not part of the public API; see predict_with_model,
-    which is what actually enforces neutral-venue symmetry.
+    symmetry correction — plus that same ordering's per-class SHAP feature
+    contributions (contribs[class_idx] gives one row per FEATURE_COLUMNS
+    entry, in the same 0=away/1=draw/2=home class order as proba). Not part
+    of the public API; see predict_with_model, which is what actually
+    enforces neutral-venue symmetry and picks which class's contributions
+    to surface.
     """
     home_elo = _elo_as_of(history, home_team)
     away_elo = _elo_as_of(history, away_team)
@@ -170,7 +182,15 @@ def _raw_proba(
     # boxed as dtype=object — cast to float or XGBoost rejects it as non-numeric.
     X_pred = predict_row[FEATURE_COLUMNS].to_frame().T.astype(float)
     proba = model.predict_proba(X_pred)[0]
-    return proba, home_elo, away_elo
+
+    # Exact TreeSHAP contributions, native to XGBoost — no separate `shap`
+    # dependency needed, same algorithm it uses under the hood for tree models.
+    # Shape (1, n_classes, n_features+1); last column per class is the bias
+    # term, dropped here since it's not a feature contribution.
+    raw_contribs = model.get_booster().predict(xgb.DMatrix(X_pred), pred_contribs=True)
+    contribs = raw_contribs[0, :, :-1]
+
+    return proba, contribs, home_elo, away_elo
 
 
 def predict_with_model(
@@ -218,14 +238,23 @@ def predict_with_model(
     remaining draw probability evenly between home_win and away_win rather
     than reallocating it proportionally, which would double-count team
     strength the model has already captured.
+
+    Also returns feature_contributions: exact TreeSHAP contributions toward
+    whichever class ends up predicted (highest final probability), from the
+    home_team/away_team ordering as given — not re-averaged across the
+    neutral-venue swap the way the probabilities are, so treat it as "what
+    drove this one calculation" rather than a fully symmetrized explanation.
+    is_knockout's post-hoc draw split isn't feature-driven, so it isn't
+    reflected here — the contributions explain the underlying classification,
+    not the knockout adjustment applied on top of it.
     """
     as_of_date = pd.Timestamp(as_of_date)
-    proba, home_elo, away_elo = _raw_proba(
+    proba, contribs, home_elo, away_elo = _raw_proba(
         model, history, home_team, away_team, as_of_date, neutral, tournament
     )
 
     if neutral:
-        swapped_proba, _, _ = _raw_proba(
+        swapped_proba, _, _, _ = _raw_proba(
             model, history, away_team, home_team, as_of_date, neutral, tournament
         )
         away_win = (proba[0] + swapped_proba[2]) / 2
@@ -238,10 +267,21 @@ def predict_with_model(
         half_draw = draw / 2
         proba = (away_win + half_draw, 0.0, home_win + half_draw)
 
+    predicted_class = int(max(range(3), key=lambda i: proba[i]))
+    feature_contributions = sorted(
+        (
+            {"feature": FEATURE_LABELS[col], "contribution": float(contribs[predicted_class][i])}
+            for i, col in enumerate(FEATURE_COLUMNS)
+        ),
+        key=lambda d: abs(d["contribution"]),
+        reverse=True,
+    )
+
     result = {
         "home_team": home_team,
         "away_team": away_team,
         "as_of_date": str(as_of_date.date()),
+        "feature_contributions": feature_contributions,
         "home_elo": round(float(home_elo), 1),
         "away_elo": round(float(away_elo), 1),
         "n_training_matches": len(history),
@@ -249,12 +289,14 @@ def predict_with_model(
         "draw_prob": round(float(proba[1]), 4),
         "home_win_prob": round(float(proba[2]), 4),
     }
+    top = feature_contributions[0]
     logger.info(
         f"{home_team} vs {away_team} as of {result['as_of_date']} "
         f"(ELO {result['home_elo']:.0f} vs {result['away_elo']:.0f}, "
         f"trained on {result['n_training_matches']:,} prior matches): "
         f"home={result['home_win_prob']:.1%}  draw={result['draw_prob']:.1%}  "
-        f"away={result['away_win_prob']:.1%}"
+        f"away={result['away_win_prob']:.1%}  "
+        f"(top factor: {top['feature']}, {top['contribution']:+.3f})"
     )
     return result
 

@@ -64,6 +64,18 @@ Two ways to predict:
   knowing only what was known as of this date" — retrains on the spot using
   only matches strictly before `as_of_date`
 
+### Explainability
+
+Every prediction includes `feature_contributions` — exact TreeSHAP values
+(XGBoost computes these natively via `pred_contribs=True`, so no separate
+`shap` dependency is needed) showing what pushed the model toward whichever
+outcome it predicted, ranked by impact with readable labels
+(`FEATURE_LABELS` in `src/model/train.py`). The web app renders this as a
+"Why this prediction?" chart. One caveat: for neutral matches this reflects
+one raw home/away ordering, not re-averaged the way the reported
+probabilities are — see "Neutral-venue symmetry" below for why that
+averaging exists in the first place.
+
 ### Command line
 
 ```
@@ -170,7 +182,8 @@ relationship.
 
 A Streamlit UI (`app.py`, repo root) on top of the same `src/model/predict.py`
 functions the CLI and notebook use — pick two teams, a date, and match
-context (neutral venue, knockout tie, tournament), get a win/draw/loss chart.
+context (neutral venue, knockout tie, tournament), get a win/draw/loss chart
+plus a "Why this prediction?" breakdown of the top contributing features.
 
 ```bash
 python src/data/pipeline.py   # one-time setup, if not already done

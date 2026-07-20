@@ -209,6 +209,53 @@ if predict_clicked:
     m2.metric("Draw", f"{result['draw_prob']:.1%}")
     m3.metric(f"{result['away_team']} win", f"{result['away_win_prob']:.1%}")
 
+    # ── Why this prediction? ─────────────────────────────────────────────────
+    outcome_probs = {
+        f"{result['home_team']} win": result["home_win_prob"],
+        "Draw": result["draw_prob"],
+        f"{result['away_team']} win": result["away_win_prob"],
+    }
+    predicted_label = max(outcome_probs, key=outcome_probs.get)
+
+    st.subheader("Why this prediction?")
+    caption = f"Top factors pushing the model toward **{predicted_label}** (exact TreeSHAP contributions)."
+    if neutral:
+        caption += (
+            " Computed from one raw home/away ordering, not re-averaged the way the "
+            "probabilities above are — see 'Neutral-venue symmetry' below."
+        )
+    st.caption(caption)
+
+    contrib_df = pd.DataFrame(result["feature_contributions"][:6])
+    contrib_df["Direction"] = contrib_df["contribution"].apply(
+        lambda v: "Supports" if v > 0 else "Opposes"
+    )
+    max_abs = contrib_df["contribution"].abs().max() * 1.25
+
+    contrib_chart = (
+        alt.Chart(contrib_df)
+        .mark_bar(cornerRadiusEnd=3, size=22)
+        .encode(
+            y=alt.Y(
+                "feature:N", title=None, sort=list(contrib_df["feature"]),
+                scale=alt.Scale(paddingInner=0.4, paddingOuter=0.3),
+                axis=alt.Axis(labelLimit=200),
+            ),
+            x=alt.X(
+                "contribution:Q", title=None,
+                scale=alt.Scale(domain=[-max_abs, max_abs]),
+            ),
+            color=alt.Color(
+                "Direction:N",
+                scale=alt.Scale(domain=["Supports", "Opposes"], range=["#2a78d6", "#e34948"]),
+                legend=alt.Legend(orient="bottom", title=None),
+            ),
+            tooltip=[alt.Tooltip("feature:N", title="Feature"), alt.Tooltip("contribution:Q", format="+.3f")],
+        )
+        .properties(height=230)
+    )
+    st.altair_chart(contrib_chart, use_container_width=True)
+
 
 with st.expander("About this model"):
     st.markdown(
@@ -224,6 +271,8 @@ with st.expander("About this model"):
   Cup holdouts (train on everything before a tournament, test on that
   tournament) rather than a random split, which would leak future form/ELO
   into training.
+- **Why this prediction**: exact TreeSHAP feature contributions, computed
+  natively by XGBoost rather than pulling in a separate `shap` dependency.
 - **Neutral-venue symmetry**: which team is labelled "home" on a neutral
   pitch shouldn't change the odds. An earlier version of this model got
   that wrong by up to 36 percentage points — fixed both in training

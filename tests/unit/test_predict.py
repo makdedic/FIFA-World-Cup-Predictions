@@ -12,6 +12,7 @@ from src.model.predict import (
     predict_with_model,
     train_as_of,
 )
+from src.model.train import FEATURE_COLUMNS, FEATURE_LABELS
 
 
 @pytest.fixture
@@ -46,6 +47,24 @@ def test_probabilities_sum_to_one(matches):
     result = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches)
     total = result["home_win_prob"] + result["draw_prob"] + result["away_win_prob"]
     assert total == pytest.approx(1.0, abs=1e-6)
+
+
+def test_feature_contributions_cover_every_feature_with_readable_labels(matches):
+    result = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches)
+    contributions = result["feature_contributions"]
+
+    assert len(contributions) == len(FEATURE_COLUMNS)
+    labels = {c["feature"] for c in contributions}
+    assert labels == set(FEATURE_LABELS.values())
+    # Human-readable, not raw column names like "form_win_rate_5_diff".
+    assert "elo_diff" not in labels
+    assert "ELO rating gap" in labels
+
+
+def test_feature_contributions_sorted_by_absolute_impact(matches):
+    result = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches)
+    magnitudes = [abs(c["contribution"]) for c in result["feature_contributions"]]
+    assert magnitudes == sorted(magnitudes, reverse=True)
 
 
 def test_elo_as_of_matches_latest_prior_match(matches):

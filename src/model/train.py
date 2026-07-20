@@ -78,6 +78,29 @@ CONTEXT_FEATURES = ["neutral", "is_world_cup", "match_importance"]
 FEATURE_COLUMNS = DIFF_FEATURES + CONTEXT_FEATURES
 TARGET = "outcome"
 
+# Human-readable labels for FEATURE_COLUMNS — for explaining an individual
+# prediction (see predict.py's feature_contributions) to someone who isn't
+# going to know what "form_win_rate_10_diff" means.
+FEATURE_LABELS = {
+    "elo_diff": "ELO rating gap",
+    "days_since_last_match_diff": "Rest advantage",
+    "win_streak_diff": "Win streak",
+    "unbeaten_streak_diff": "Unbeaten streak",
+    "h2h_matches_played_diff": "Head-to-head experience",
+    "h2h_win_rate_diff": "Head-to-head win rate",
+    "form_points_avg_5_diff": "Recent form — points (last 5)",
+    "form_goals_for_avg_5_diff": "Recent form — goals scored (last 5)",
+    "form_goals_against_avg_5_diff": "Recent form — goals conceded (last 5)",
+    "form_win_rate_5_diff": "Recent form — win rate (last 5)",
+    "form_points_avg_10_diff": "Recent form — points (last 10)",
+    "form_goals_for_avg_10_diff": "Recent form — goals scored (last 10)",
+    "form_goals_against_avg_10_diff": "Recent form — goals conceded (last 10)",
+    "form_win_rate_10_diff": "Recent form — win rate (last 10)",
+    "neutral": "Neutral venue",
+    "is_world_cup": "World Cup context",
+    "match_importance": "Tournament importance",
+}
+
 
 # ── Data loading ───────────────────────────────────────────────────────────────
 
