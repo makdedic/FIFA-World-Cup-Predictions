@@ -6,6 +6,7 @@ from src.data.elo import INITIAL_RATING, calculate_elo
 from src.model.predict import (
     _elo_as_of,
     _is_world_cup,
+    get_all_teams,
     predict_latest,
     predict_match,
     predict_with_model,
@@ -57,6 +58,29 @@ def test_elo_as_of_matches_latest_prior_match(matches):
     assert result["home_elo"] == pytest.approx(expected_brazil, abs=0.05)
 
 
+def test_elo_as_of_excludes_the_boundary_match_itself(matches):
+    """
+    A team's ELO for a cutoff exactly on one of its match dates must equal
+    that match's own elo_before (the rating it carried INTO the match), never
+    its elo_after — otherwise the match's own result would leak into a
+    same-day prediction. This is the exact property that matters for an "as
+    of the day before this real match" prediction: verified by hand against
+    the actual 2026 World Cup final in conversation, pinned here so it can't
+    silently regress.
+    """
+    # Last match in the fixture — same shape as "the final" being the most
+    # recent result in the real dataset.
+    boundary_match = matches.iloc[-1]
+    cutoff = boundary_match["date"]
+    home_team = boundary_match["home_team"]
+
+    history = matches[matches["date"] < cutoff]
+    elo = _elo_as_of(history, home_team)
+
+    assert elo == pytest.approx(boundary_match["home_elo_before"])
+    assert elo != pytest.approx(boundary_match["home_elo_after"])
+
+
 def test_unseen_team_uses_initial_rating(matches):
     """A team with zero match history should start at INITIAL_RATING, not error out."""
     result = predict_match("Brazil", "Wakanda", "2021-06-01", matches=matches)
@@ -84,6 +108,15 @@ def test_raises_when_no_prior_history(matches):
     """A cutoff before any data exists should fail loudly, not silently train on nothing."""
     with pytest.raises(ValueError):
         predict_match("Brazil", "Argentina", "2000-01-01", matches=matches)
+
+
+def test_get_all_teams_is_sorted_and_deduplicated(matches):
+    """Every team appears once, alphabetically — for populating a UI dropdown."""
+    teams = get_all_teams(matches)
+    assert teams == sorted(set(teams))
+    assert "Brazil" in teams
+    assert "Argentina" in teams
+    assert "France" in teams
 
 
 def test_is_world_cup_matches_clean_py_convention():

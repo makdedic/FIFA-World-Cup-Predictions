@@ -64,6 +64,19 @@ def load_matches(db_path: Path = DB_PATH) -> pd.DataFrame:
     return df
 
 
+def get_all_teams(matches: pd.DataFrame | None = None, db_path: Path = DB_PATH) -> list[str]:
+    """
+    Every standardised team name in the dataset (see TEAM_NAME_MAP in
+    src/data/clean.py), sorted alphabetically. For populating a dropdown —
+    a free-text team field silently mispredicts on a typo (an unrecognised
+    name just gets treated as a brand-new team with no history) rather than
+    erroring, so a dropdown of real names is the fix, not input validation.
+    """
+    if matches is None:
+        matches = load_matches(db_path)
+    return sorted(set(matches["home_team"]) | set(matches["away_team"]))
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _elo_as_of(history: pd.DataFrame, team: str) -> float:
