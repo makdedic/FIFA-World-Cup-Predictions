@@ -196,6 +196,23 @@ production model (instant); "As of a specific date" retrains on the spot
 (a few seconds) — both call straight into `train_as_of`/`predict_with_model`,
 so there's no separate prediction logic to keep in sync with the CLI.
 
+### Deployment
+
+`data/worldcup.duckdb` and `models/outcome_model.joblib` are committed —
+deliberately, unlike everything else under `data/`/`models/`. A platform
+like Streamlit Community Cloud clones the repo fresh on every deploy, wake
+from sleep, and cold start; without a committed snapshot, every one of those
+would need to rebuild the database and retrain the model from scratch first
+(tens of seconds), and there's no way to predict when a visitor will land on
+one of those cold starts. `app.py` still self-heals via `_run_setup_script`
+if either file is ever missing (e.g. deploying somewhere that doesn't get
+the committed copy), but in normal operation that path never runs.
+
+This means the deployed data goes stale until refreshed deliberately —
+rerun `python src/data/pipeline.py` and `python src/model/train.py`, then
+commit the updated files, whenever you want the live app caught up on
+recent results.
+
 ## Data
 
 This project uses the International Football Results dataset.

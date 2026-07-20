@@ -12,9 +12,16 @@ data/raw/
 data/processed/
 data/*.duckdb
 *.parquet
+# Exception: worldcup.duckdb IS committed — it's the deployed app's data
+# snapshot, so a fresh Streamlit Cloud clone doesn't need a cold-start
+# pipeline rebuild. Refresh it deliberately (rerun the pipeline, recommit)
+# rather than relying on it regenerating on deploy.
+!data/worldcup.duckdb
 
-# Trained models — reproduced by src/model/train.py
-models/
+# Trained models — reproduced by src/model/train.py, except the deployed
+# snapshot (same reasoning as worldcup.duckdb above).
+models/*
+!models/outcome_model.joblib
 
 # Python cache
 __pycache__/
