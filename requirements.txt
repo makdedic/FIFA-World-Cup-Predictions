@@ -15,6 +15,10 @@ xgboost==3.3.0
 scikit-learn==1.9.0    # metrics only — XGBoost handles training/inference
 joblib==1.5.3           # model persistence
 
+# Web app
+streamlit==1.59.2
+altair==6.2.2           # charts — ships with streamlit but pinned explicitly since app.py imports it directly
+
 # HTTP / downloading
 requests==2.32.3
 

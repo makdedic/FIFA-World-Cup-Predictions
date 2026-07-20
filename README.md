@@ -3,6 +3,19 @@
 Predicts win/draw/loss probabilities for international football matches,
 built on 150+ years of match history.
 
+## Setup
+
+Every command in this README assumes the virtual environment is active.
+`streamlit`/`python` outside it resolve to a *different* Python (e.g. a
+system install or pyenv shim) with none of this project's dependencies —
+that's the #1 source of `ModuleNotFoundError` here, not a broken install.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # every command below assumes this is active
+pip install -r requirements-dev.txt  # includes requirements.txt + test/lint tools
+```
+
 ## Pipeline
 
 A Prefect flow (`src/data/pipeline.py`) does the heavy lifting, in order:
@@ -152,6 +165,23 @@ comment in `clean_results`). A full fix would still need real per-match stage
 data to auto-detect this, plus merging `shootouts.csv` into training so the
 model itself — not just a serving-time patch — learns the knockout-specific
 relationship.
+
+## Web App
+
+A Streamlit UI (`app.py`, repo root) on top of the same `src/model/predict.py`
+functions the CLI and notebook use — pick two teams, a date, and match
+context (neutral venue, knockout tie, tournament), get a win/draw/loss chart.
+
+```bash
+python src/data/pipeline.py   # one-time setup, if not already done
+python src/model/train.py     # optional — caches a production model for the fast path
+streamlit run app.py
+```
+
+Opens at `http://localhost:8501`. The "Right now" mode uses the cached
+production model (instant); "As of a specific date" retrains on the spot
+(a few seconds) — both call straight into `train_as_of`/`predict_with_model`,
+so there's no separate prediction logic to keep in sync with the CLI.
 
 ## Data
 
