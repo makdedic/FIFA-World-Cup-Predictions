@@ -219,8 +219,10 @@ if predict_clicked:
         )
         .properties(height=190)
     )
+    # No explicit colour — a hardcoded dark hex was illegible in dark mode.
+    # Left unset, it inherits Streamlit's automatic light/dark chart theming.
     labels = bars.mark_text(align="left", dx=6).encode(
-        text=alt.Text("Probability:Q", format=".1%"), color=alt.value("#0b0b0b")
+        text=alt.Text("Probability:Q", format=".1%")
     )
     st.altair_chart(bars + labels, use_container_width=True)
 
