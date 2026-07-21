@@ -1,7 +1,14 @@
 # FIFA-World-Cup-Predictions
 
+[![Tests](https://github.com/makdedic/FIFA-World-Cup-Predictions/actions/workflows/tests.yml/badge.svg)](https://github.com/makdedic/FIFA-World-Cup-Predictions/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**[Try the live app →](https://fifa-world-cup-predictions-fhggo9wfabkc5gegpetqq3.streamlit.app/)**
+
 Predicts win/draw/loss probabilities for international football matches,
 built on 150+ years of match history.
+
+![App screenshot](docs/screenshot.png)
 
 ## Setup
 
@@ -220,5 +227,9 @@ This project uses the International Football Results dataset.
 Source:
 https://github.com/martj42/international_results
 
-License:
+Dataset license:
 CC0-1.0 (Public Domain)
+
+## License
+
+This project's code is licensed under the [MIT License](LICENSE).
