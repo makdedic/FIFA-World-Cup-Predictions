@@ -52,8 +52,8 @@ being featurised, so nothing ever leaks a match's own result into its features.
 
 `src/model/` trains an XGBoost multiclass classifier on ELO + engineered
 features to predict match outcome (home win / draw / away win). Trained on
-all international matches, not just World Cup ones — World Cup matches alone
-(~1,100 of ~50,000) are too few to train on without overfitting; tournament
+all international matches, not just World Cup ones as World Cup matches alone
+are too few (~1,100 of ~50,000)  to train on without overfitting; tournament
 context (`is_world_cup`, `match_importance`) is passed in as a feature instead.
 
 Two ways to predict:
@@ -69,7 +69,7 @@ Two ways to predict:
 Every prediction includes `feature_contributions` — exact TreeSHAP values
 (XGBoost computes these natively via `pred_contribs=True`, so no separate
 `shap` dependency is needed) showing what pushed the model toward whichever
-outcome it predicted, ranked by impact with readable labels
+outcome it predicted, ranked by impact with labels
 (`FEATURE_LABELS` in `src/model/train.py`). The web app renders this as a
 "Why this prediction?" chart. One caveat: for neutral matches this reflects
 one raw home/away ordering, not re-averaged the way the reported
@@ -175,7 +175,7 @@ no automatic way to detect knockout stage from the data, since `wc_stage` is
 a stub, always `"Group"` (the source dataset has no stage column; see the
 comment in `clean_results`). A full fix would still need real per-match stage
 data to auto-detect this, plus merging `shootouts.csv` into training so the
-model itself — not just a serving-time patch — learns the knockout-specific
+model itself learns the knockout-specific
 relationship.
 
 ## Web App
