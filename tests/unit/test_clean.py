@@ -1,7 +1,7 @@
 # tests/test_clean.py
 import pandas as pd
 import pytest
-from src.data.clean import clean_results, TEAM_NAME_MAP
+from src.data.clean import clean_results
 
 
 @pytest.fixture
