@@ -191,6 +191,10 @@ A Streamlit UI (`app.py`, repo root) on top of the same `src/model/predict.py`
 functions the CLI and notebook use — pick two teams, a date, and match
 context (neutral venue, knockout tie, tournament), get a win/draw/loss chart
 plus a "Why this prediction?" breakdown of the top contributing features.
+Also shows the head-to-head record between the two selected teams
+(`get_head_to_head`) and an "Explore the data" table of every team's current
+ELO and streaks, ranked by ELO (`get_current_team_stats`) — both in
+`src/model/predict.py`, reusing the same no-lookahead data the model trains on.
 
 ```bash
 python src/data/pipeline.py   # one-time setup, if not already done

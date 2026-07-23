@@ -53,7 +53,7 @@ from train import (
 )
 
 sys.path.insert(0, str(Path(__file__).parent.parent))  # src/ — for sibling `data`/`features` packages
-from data.elo import INITIAL_RATING, get_k_factor
+from data.elo import INITIAL_RATING, get_current_ratings, get_k_factor
 from features.engineering import build_features
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -83,6 +83,96 @@ def get_all_teams(matches: pd.DataFrame | None = None, db_path: Path = DB_PATH) 
     if matches is None:
         matches = load_matches(db_path)
     return sorted(set(matches["home_team"]) | set(matches["away_team"]))
+
+
+def get_head_to_head(history: pd.DataFrame, team_a: str, team_b: str, recent_n: int = 5) -> dict:
+    """
+    Historical record between two specific teams, computed strictly from
+    `history` — respects whatever as_of_date cutoff the caller already
+    applied, so this never shows a meeting that hasn't happened yet relative
+    to that cutoff. Returns each team's win count, draws, and the recent_n
+    most recent meetings (most recent first).
+    """
+    mask = (
+        ((history["home_team"] == team_a) & (history["away_team"] == team_b))
+        | ((history["home_team"] == team_b) & (history["away_team"] == team_a))
+    )
+    meetings = history[mask].sort_values("date")
+
+    team_a_wins = int((
+        ((meetings["home_team"] == team_a) & (meetings["outcome"] == 2))
+        | ((meetings["away_team"] == team_a) & (meetings["outcome"] == 0))
+    ).sum())
+    team_b_wins = int((
+        ((meetings["home_team"] == team_b) & (meetings["outcome"] == 2))
+        | ((meetings["away_team"] == team_b) & (meetings["outcome"] == 0))
+    ).sum())
+    draws = int((meetings["outcome"] == 1).sum())
+
+    recent = meetings.sort_values("date", ascending=False).head(recent_n)
+    recent_meetings = [
+        {
+            "date": str(row["date"].date()),
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "home_score": int(row["home_score"]),
+            "away_score": int(row["away_score"]),
+            "tournament": row["tournament"],
+        }
+        for _, row in recent.iterrows()
+    ]
+
+    return {
+        "team_a": team_a,
+        "team_b": team_b,
+        "total_matches": len(meetings),
+        "team_a_wins": team_a_wins,
+        "team_b_wins": team_b_wins,
+        "draws": draws,
+        "recent_meetings": recent_meetings,
+    }
+
+
+def _current_streak(flags: pd.Series) -> int:
+    """Consecutive True values counting back from the END of an already-chronologically-sorted series."""
+    streak = 0
+    for value in flags.iloc[::-1]:
+        if not value:
+            break
+        streak += 1
+    return streak
+
+
+def get_current_team_stats(matches: pd.DataFrame) -> pd.DataFrame:
+    """
+    One row per team: current ELO (via elo.py's get_current_ratings) plus
+    current win/unbeaten streak, ordered by ELO — for browsing the dataset,
+    not for prediction (predictions use _elo_as_of/build_features against
+    their own as_of_date cutoff, which this deliberately ignores).
+    """
+    ratings = get_current_ratings(matches)
+
+    home = matches[["date", "home_team", "home_score", "away_score"]].rename(columns={"home_team": "team"})
+    home["win"] = home["home_score"] > home["away_score"]
+    home["unbeaten"] = home["home_score"] >= home["away_score"]
+    away = matches[["date", "away_team", "away_score", "home_score"]].rename(columns={"away_team": "team"})
+    away["win"] = away["away_score"] > away["home_score"]
+    away["unbeaten"] = away["away_score"] >= away["home_score"]
+
+    long_df = pd.concat(
+        [home[["date", "team", "win", "unbeaten"]], away[["date", "team", "win", "unbeaten"]]]
+    ).sort_values(["team", "date"])
+
+    streaks = long_df.groupby("team").agg(
+        win_streak=("win", _current_streak),
+        unbeaten_streak=("unbeaten", _current_streak),
+    ).reset_index()
+
+    return (
+        ratings.merge(streaks, on="team", how="left")
+        .sort_values("current_elo", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -243,7 +333,7 @@ def predict_with_model(
     whichever class ends up predicted (highest final probability), from the
     home_team/away_team ordering as given — not re-averaged across the
     neutral-venue swap the way the probabilities are, so treat it as "what
-    drove this one calculation" rather than a fully symmetrized explanation.
+    drove this one calculation" rather than a fully symmetrised explanation.
     is_knockout's post-hoc draw split isn't feature-driven, so it isn't
     reflected here — the contributions explain the underlying classification,
     not the knockout adjustment applied on top of it.

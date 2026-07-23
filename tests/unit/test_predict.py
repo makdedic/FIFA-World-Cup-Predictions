@@ -7,6 +7,8 @@ from src.model.predict import (
     _elo_as_of,
     _is_world_cup,
     get_all_teams,
+    get_current_team_stats,
+    get_head_to_head,
     predict_latest,
     predict_match,
     predict_with_model,
@@ -47,6 +49,67 @@ def test_probabilities_sum_to_one(matches):
     result = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches)
     total = result["home_win_prob"] + result["draw_prob"] + result["away_win_prob"]
     assert total == pytest.approx(1.0, abs=1e-6)
+
+
+def test_get_head_to_head_counts_wins_correctly(matches):
+    """Brazil beats Argentina 2-1 at home every one of their 10 meetings in the fixture."""
+    h2h = get_head_to_head(matches, "Brazil", "Argentina")
+    assert h2h["total_matches"] == 10
+    assert h2h["team_a_wins"] == 10
+    assert h2h["team_b_wins"] == 0
+    assert h2h["draws"] == 0
+
+
+def test_get_head_to_head_symmetric_regardless_of_argument_order(matches):
+    """Swapping team_a/team_b should just swap which win-count is which, not change the facts."""
+    ab = get_head_to_head(matches, "Brazil", "Argentina")
+    ba = get_head_to_head(matches, "Argentina", "Brazil")
+    assert ab["team_a_wins"] == ba["team_b_wins"]
+    assert ab["team_b_wins"] == ba["team_a_wins"]
+    assert ab["total_matches"] == ba["total_matches"]
+
+
+def test_get_head_to_head_no_prior_meetings(matches):
+    """Two teams that have never played each other in `history` should show zero matches, not error."""
+    h2h = get_head_to_head(matches, "Brazil", "Wakanda")
+    assert h2h["total_matches"] == 0
+    assert h2h["recent_meetings"] == []
+
+
+def test_get_head_to_head_recent_meetings_most_recent_first(matches):
+    h2h = get_head_to_head(matches, "Brazil", "Argentina", recent_n=3)
+    dates = [m["date"] for m in h2h["recent_meetings"]]
+    assert dates == sorted(dates, reverse=True)
+    assert len(h2h["recent_meetings"]) == 3
+
+
+def test_get_head_to_head_respects_history_cutoff(matches):
+    """Meetings after the as_of cutoff must not appear — history is already the caller's responsibility."""
+    cutoff_history = matches[matches["date"] < pd.Timestamp("2019-06-01")]
+    h2h = get_head_to_head(cutoff_history, "Brazil", "Argentina")
+    assert all(m["date"] < "2019-06-01" for m in h2h["recent_meetings"])
+    assert h2h["total_matches"] < 10
+
+
+def test_get_current_team_stats_streaks_and_ranking(matches):
+    """
+    Brazil wins every one of its 20 matches in the fixture (win_streak=20).
+    Argentina's most recent match was a draw preceded by a loss
+    (win_streak=0, unbeaten_streak=1). Table must be ELO-ranked, so the
+    highest-ELO team (Brazil, undefeated) sorts first.
+    """
+    stats = get_current_team_stats(matches)
+
+    assert list(stats["current_elo"]) == sorted(stats["current_elo"], reverse=True)
+
+    brazil = stats[stats["team"] == "Brazil"].iloc[0]
+    assert brazil["win_streak"] == 20
+    assert brazil["unbeaten_streak"] == 20
+    assert stats.iloc[0]["team"] == "Brazil"
+
+    argentina = stats[stats["team"] == "Argentina"].iloc[0]
+    assert argentina["win_streak"] == 0
+    assert argentina["unbeaten_streak"] == 1
 
 
 def test_feature_contributions_cover_every_feature_with_readable_labels(matches):
