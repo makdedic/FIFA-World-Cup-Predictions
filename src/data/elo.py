@@ -32,40 +32,52 @@ BASE_K = 20.0              # Base sensitivity factor
 ELO_SCALE = 400.0          # Controls spread of expected score curve
 HOME_ADVANTAGE = 100.0
 
-# K-factors per tournament — matches eloratings.net exactly
+# K-factors per tournament — matches eloratings.net exactly. Keys are matched
+# against this dataset's actual tournament strings (see src/data/clean.py),
+# which don't always match eloratings.net's own naming — e.g. this dataset
+# says "African Cup of Nations", "Gold Cup", and "Confederations Cup" where
+# eloratings.net's write-up says "Africa Cup of Nations", "CONCACAF Gold
+# Cup", and "FIFA Confederations Cup".
 K_FACTORS = {
-    "FIFA World Cup":                    60,
-    "UEFA Euro":                         50,
-    "Copa América":                      50,
-    "Africa Cup of Nations":             50,
-    "AFC Asian Cup":                     50,
-    "CONCACAF Gold Cup":                 50,
-    "FIFA Confederations Cup":           50,
-    "FIFA World Cup qualification":      40,
-    "UEFA Euro qualification":           30,
-    "AFC Asian Cup qualification":       30,
-    "Africa Cup of Nations qualification": 30,
-    "CONCACAF Gold Cup qualification":   30,
-    "Friendly":                          20,
+    "FIFA World Cup":                     60,
+    "UEFA Euro":                          50,
+    "Copa América":                       50,
+    "African Cup of Nations":             50,
+    "AFC Asian Cup":                      50,
+    "Gold Cup":                           50,
+    "Confederations Cup":                 50,
+    "FIFA World Cup qualification":       40,
+    "UEFA Euro qualification":            30,
+    "AFC Asian Cup qualification":        30,
+    "African Cup of Nations qualification": 30,
+    "Gold Cup qualification":             30,
+    "Friendly":                           20,
 }
 
 
 # ── Core ELO functions ────────────────────────────────────────────────────────
 
-def expected_score(rating_a: float, rating_b: float) -> float:
+def expected_score(rating_home: float, rating_away: float) -> float:
     """
-    Calculate expected score for team A against team B.
+    Calculate expected score for home team against away team.
     Returns a probability between 0 and 1.
 
     If ratings are equal: returns 0.5 (50% expected score)
     If A is 200 points higher: returns ~0.76 (76% expected score)
     """
-    return 1.0 / (1.0 + 10.0 ** ((rating_b - rating_a) / ELO_SCALE))
+    return 1.0 / (1.0 + 10.0 ** ((rating_away - rating_home) / ELO_SCALE))
 
 
 def get_k_factor(tournament: str) -> float:
-    """Return K-factor for a given tournament matching eloratings.net methodology."""
-    for keyword, k in K_FACTORS.items():
+    """
+    Return K-factor for a given tournament matching eloratings.net methodology.
+
+    Checks the longest keyword first, since e.g. "FIFA World Cup" is a
+    substring of "FIFA World Cup qualification" — checking shorter keywords
+    first would match every qualifier to its parent tournament's K instead
+    of its own.
+    """
+    for keyword, k in sorted(K_FACTORS.items(), key=lambda item: len(item[0]), reverse=True):
         if keyword.lower() in tournament.lower():
             return float(k)
     return 30.0  # default for unlisted tournaments
