@@ -108,7 +108,7 @@ latest_date = matches["date"].max()
 
 st.title("⚽ World Cup Match Predictor")
 st.write(
-    "Predicts the outcome of any international football match — pick two "
+    "Predict the outcome of any international football match — pick two "
     "teams, choose a date, and see win/draw/loss probabilities from a model "
     "trained on 150+ years of match history, plus an explanation of what's "
     "actually driving the prediction."
