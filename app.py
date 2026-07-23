@@ -31,6 +31,8 @@ from model.predict import (  # noqa: E402
     DB_PATH,
     MODELS_DIR,
     get_all_teams,
+    get_current_team_stats,
+    get_head_to_head,
     load_matches,
     load_production_model,
     predict_with_model,
@@ -39,7 +41,7 @@ from model.predict import (  # noqa: E402
 
 st.set_page_config(page_title="World Cup Match Predictor", page_icon="⚽", layout="centered")
 
-# Fixed categorical colors — home/away are competing identities (blue/orange),
+# Fixed categorical colours — home/away are competing identities (blue/orange),
 # draw is a neutral non-competing state (gray), not a third hue to distinguish.
 OUTCOME_COLORS = {"Home win": "#2a78d6", "Draw": "#898781", "Away win": "#eb6834"}
 
@@ -105,22 +107,97 @@ teams = get_all_teams(matches)
 latest_date = matches["date"].max()
 
 st.title("⚽ World Cup Match Predictor")
-st.caption(
-    f"XGBoost model trained on {len(matches):,} international matches "
-    f"(1872–{latest_date.year}). For fun — not betting advice."
+st.write(
+    "Predicts the outcome of any international football match — pick two "
+    "teams, choose a date, and see win/draw/loss probabilities from a model "
+    "trained on 150+ years of match history, plus an explanation of what's "
+    "actually driving the prediction."
 )
+
+
+st.markdown("**How to use this**")
+st.markdown(
+    """
+1. Pick a **home** and **away** team.
+2. Choose a prediction basis — **"Right now"** uses everything known today;
+   **"As of a specific date"** retrains using only matches strictly before
+   that date, so you can ask "what would we have predicted before this
+   actually happened?"
+3. Set the tournament, whether it's a neutral venue, and whether it's a
+   knockout tie (can't end in a draw) under **Match context**.
+4. Click **Predict** for win/draw/loss probabilities and a breakdown of what
+   drove the prediction.
+    """
+)
+
+
+st.markdown("**📊 Explore the data**")
+st.caption(
+    "Current ELO and streaks for every team, ranked by ELO. This is "
+    "'right now' data — it ignores any 'as of a specific date' cutoff "
+    "set above, so it always reflects everything in the dataset."
+)
+team_stats = get_current_team_stats(matches)
+search = st.text_input("Filter by team name", key="explore_search")
+if search:
+    team_stats = team_stats[team_stats["team"].str.contains(search, case=False)]
+
+st.dataframe(
+    team_stats.rename(columns={
+        "team": "Team",
+        "current_elo": "ELO",
+        "matches_played": "Matches played",
+        "provisional": "Provisional",
+        "win_streak": "Win streak",
+        "unbeaten_streak": "Unbeaten streak",
+    }),
+    use_container_width=True,
+    height=400,
+    hide_index=True,
+    column_config={"ELO": st.column_config.NumberColumn(format="%.0f")},
+)
+st.caption(f"Showing {len(team_stats):,} of {len(teams):,} teams, from {len(matches):,} matches total.")
 
 
 # ── Inputs ───────────────────────────────────────────────────────────────────
 
+
+# Both selectboxes use the SAME full `teams` list (not filtered based on each
+# other's current value) and a stable `key` — that's what lets Streamlit
+# persist each selection independently across reruns. Dynamically filtering
+# one dropdown's options based on the other's value (the previous approach)
+# made Streamlit treat the options list as "changed" on every rerun and reset
+# to the default instead of remembering what the user had picked.
 col1, col2 = st.columns(2)
 with col1:
     home_default = teams.index("Argentina") if "Argentina" in teams else 0
-    home_team = st.selectbox("Home team", teams, index=home_default)
+    home_team = st.selectbox("Home team", teams, index=home_default, key="home_team")
 with col2:
-    away_candidates = [t for t in teams if t != home_team]
-    away_default_team = "Brazil" if "Brazil" in away_candidates else away_candidates[0]
-    away_team = st.selectbox("Away team", away_candidates, index=away_candidates.index(away_default_team))
+    away_default = teams.index("Brazil") if "Brazil" in teams else 0
+    away_team = st.selectbox("Away team", teams, index=away_default, key="away_team")
+
+if home_team == away_team:
+    st.warning("Pick two different teams.")
+
+h2h = get_head_to_head(matches, home_team, away_team)
+if h2h["total_matches"] > 0:
+    st.caption(
+        f"**Head-to-head** ({h2h['total_matches']} previous meeting"
+        f"{'s' if h2h['total_matches'] != 1 else ''}): "
+        f"{home_team} {h2h['team_a_wins']} · Draws {h2h['draws']} · {away_team} {h2h['team_b_wins']}"
+    )
+    st.markdown(f"**Last {len(h2h['recent_meetings'])} meetings**")
+    recent_df = pd.DataFrame(h2h["recent_meetings"]).rename(columns={
+        "date": "Date",
+        "home_team": "Home",
+        "away_team": "Away",
+        "home_score": "Home score",
+        "away_score": "Away score",
+        "tournament": "Tournament",
+    })
+    st.dataframe(recent_df, use_container_width=True, hide_index=True)
+else:
+    st.caption("**Head-to-head**: no previous meetings in this dataset.")
 
 mode = st.radio(
     "Prediction basis",
@@ -136,19 +213,19 @@ if mode == "As of a specific date":
     )
     st.caption("Retrains a fresh model for this date — takes a few seconds.")
 
-with st.expander("Match context"):
-    # Free text risked a typo silently falling through to get_k_factor()'s
-    # default K=30 — same failure mode a team free-text field had, same fix.
-    tournament = st.selectbox("Tournament", list(K_FACTORS.keys()), index=0)
-    neutral = st.checkbox("Neutral venue", value=True)
-    is_knockout = st.checkbox(
-        "Knockout tie (can't end in a draw)",
-        value=False,
-        help="Splits the draw probability evenly into home/away instead of "
-             "predicting an outcome that can't actually happen — see README.",
-    )
+st.markdown("**Match context**")
+# Free text risked a typo silently falling through to get_k_factor()'s
+# default K=30 — same failure mode a team free-text field had, same fix.
+tournament = st.selectbox("Tournament", list(K_FACTORS.keys()), index=0)
+neutral = st.checkbox("Neutral venue", value=True)
+is_knockout = st.checkbox(
+    "Knockout tie (can't end in a draw)",
+    value=False,
+    help="Splits the draw probability evenly into home/away instead of "
+         "predicting an outcome that can't actually happen — see README.",
+)
 
-predict_clicked = st.button("Predict", type="primary")
+predict_clicked = st.button("Predict", type="primary", disabled=(home_team == away_team))
 
 
 # ── Prediction ───────────────────────────────────────────────────────────────
