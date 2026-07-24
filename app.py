@@ -349,7 +349,11 @@ if predict_clicked:
                 scale=alt.Scale(domain=["Supports", "Opposes"], range=["#2a78d6", "#e34948"]),
                 legend=alt.Legend(orient="bottom", title=None),
             ),
-            tooltip=[alt.Tooltip("feature:N", title="Feature"), alt.Tooltip("contribution:Q", format="+.3f")],
+            tooltip=[
+                alt.Tooltip("feature:N", title="Feature"),
+                alt.Tooltip("contribution:Q", title="Contribution", format="+.3f"),
+                alt.Tooltip("value:Q", title="Feature value (home − away)", format="+.2f"),
+            ],
         )
         .properties(height=230)
     )

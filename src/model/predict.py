@@ -236,8 +236,9 @@ def _raw_proba(
     [away_win, draw, home_win] for exactly this home/away ordering — no
     symmetry correction — plus that same ordering's per-class SHAP feature
     contributions (contribs[class_idx] gives one row per FEATURE_COLUMNS
-    entry, in the same 0=away/1=draw/2=home class order as proba). Not part
-    of the public API; see predict_with_model, which is what actually
+    entry, in the same 0=away/1=draw/2=home class order as proba) and the
+    raw FEATURE_COLUMNS values fed into the model for this ordering. Not
+    part of the public API; see predict_with_model, which is what actually
     enforces neutral-venue symmetry and picks which class's contributions
     to surface.
     """
@@ -280,7 +281,7 @@ def _raw_proba(
     raw_contribs = model.get_booster().predict(xgb.DMatrix(X_pred), pred_contribs=True)
     contribs = raw_contribs[0, :, :-1]
 
-    return proba, contribs, home_elo, away_elo
+    return proba, contribs, home_elo, away_elo, X_pred.iloc[0]
 
 
 def predict_with_model(
@@ -329,22 +330,23 @@ def predict_with_model(
     than reallocating it proportionally, which would double-count team
     strength the model has already captured.
 
-    Also returns feature_contributions: exact TreeSHAP contributions toward
-    whichever class ends up predicted (highest final probability), from the
-    home_team/away_team ordering as given — not re-averaged across the
-    neutral-venue swap the way the probabilities are, so treat it as "what
-    drove this one calculation" rather than a fully symmetrised explanation.
+    Also returns feature_contributions: exact TreeSHAP contributions (plus
+    the raw feature value that produced each one) toward whichever class
+    ends up predicted (highest final probability), from the home_team/
+    away_team ordering as given — not re-averaged across the neutral-venue
+    swap the way the probabilities are, so treat it as "what drove this one
+    calculation" rather than a fully symmetrised explanation.
     is_knockout's post-hoc draw split isn't feature-driven, so it isn't
     reflected here — the contributions explain the underlying classification,
     not the knockout adjustment applied on top of it.
     """
     as_of_date = pd.Timestamp(as_of_date)
-    proba, contribs, home_elo, away_elo = _raw_proba(
+    proba, contribs, home_elo, away_elo, feature_values = _raw_proba(
         model, history, home_team, away_team, as_of_date, neutral, tournament
     )
 
     if neutral:
-        swapped_proba, _, _, _ = _raw_proba(
+        swapped_proba, *_ = _raw_proba(
             model, history, away_team, home_team, as_of_date, neutral, tournament
         )
         away_win = (proba[0] + swapped_proba[2]) / 2
@@ -360,7 +362,11 @@ def predict_with_model(
     predicted_class = int(max(range(3), key=lambda i: proba[i]))
     feature_contributions = sorted(
         (
-            {"feature": FEATURE_LABELS[col], "contribution": float(contribs[predicted_class][i])}
+            {
+                "feature": FEATURE_LABELS[col],
+                "contribution": float(contribs[predicted_class][i]),
+                "value": float(feature_values[col]),
+            }
             for i, col in enumerate(FEATURE_COLUMNS)
         ),
         key=lambda d: abs(d["contribution"]),

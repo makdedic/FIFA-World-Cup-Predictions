@@ -130,6 +130,13 @@ def test_feature_contributions_sorted_by_absolute_impact(matches):
     assert magnitudes == sorted(magnitudes, reverse=True)
 
 
+def test_feature_contributions_include_raw_feature_value(matches):
+    """Each contribution should carry the actual home-minus-away feature value that produced it, not just the SHAP number."""
+    result = predict_match("Brazil", "Argentina", "2021-06-01", matches=matches)
+    elo_gap = next(c for c in result["feature_contributions"] if c["feature"] == "ELO rating gap")
+    assert elo_gap["value"] == pytest.approx(result["home_elo"] - result["away_elo"], abs=0.05)
+
+
 def test_elo_as_of_matches_latest_prior_match(matches):
     """home_elo/away_elo in the result should equal each team's ELO right after their last match before the cutoff."""
     cutoff = pd.Timestamp("2019-06-01")
