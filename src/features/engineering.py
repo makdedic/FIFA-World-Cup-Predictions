@@ -143,9 +143,23 @@ def _merge_side(matches: pd.DataFrame, long_df: pd.DataFrame, is_home: bool) -> 
     return matches.merge(side, on="match_id", how="left")
 
 
+# win_streak_diff/unbeaten_streak_diff are capped at this magnitude. By the
+# semi-final/final stage of a tournament, both remaining teams tend to carry
+# long unbroken streaks (you can't get there otherwise), pushing these diffs
+# into a region only 4.4% of training matches ever reach. XGBoost's splits
+# there are fit on very few examples, so an extra win can swing a prediction
+# far more than the underlying event warrants. Capping means the model can't
+# keep distinguishing a 15-game streak from a genuine 40+ game one (Algeria's
+# real 2021-22 run, for example) — a distinction it has almost no reliable
+# data to draw anyway.
+STREAK_DIFF_CAP = 10
+
+
 def _add_diff_features(matches: pd.DataFrame) -> pd.DataFrame:
     for col in _FEATURE_COLS:
         matches[f"{col}_diff"] = matches[f"home_{col}"] - matches[f"away_{col}"]
+    for col in ("win_streak_diff", "unbeaten_streak_diff"):
+        matches[col] = matches[col].clip(-STREAK_DIFF_CAP, STREAK_DIFF_CAP)
     return matches
 
 

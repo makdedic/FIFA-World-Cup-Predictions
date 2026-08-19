@@ -1,7 +1,7 @@
 # tests/unit/test_features.py
 import pandas as pd
 import pytest
-from src.features.engineering import build_features
+from src.features.engineering import STREAK_DIFF_CAP, build_features
 
 
 @pytest.fixture
@@ -78,6 +78,43 @@ def test_win_streak_resets_on_loss(matches):
     result = build_features(losers)
     assert result.iloc[1]["home_win_streak"] == 1   # won match 1, streak going into match 2
     assert result.iloc[2]["home_win_streak"] == 0   # lost match 2, streak resets going into match 3
+
+
+def test_streak_diff_is_capped(matches):
+    """
+    A team on a long unbroken run (e.g. Algeria's real 40+ game unbeaten
+    streak) shouldn't feed an unbounded raw value into the model — beyond
+    STREAK_DIFF_CAP, the model has almost no training examples to learn a
+    reliable split from, so win_streak_diff/unbeaten_streak_diff are clipped.
+    """
+    long_streak = pd.concat([
+        pd.DataFrame({
+            "date": pd.to_datetime([f"2015-{m:02d}-01" for m in range(1, 13)]),
+            "home_team": ["Brazil"] * 12,
+            "away_team": [f"Opponent{i}" for i in range(12)],
+            "home_score": [3] * 12,
+            "away_score": [0] * 12,
+            "tournament": ["Friendly"] * 12,
+            "neutral": [False] * 12,
+            "is_world_cup": [0] * 12,
+        }),
+        pd.DataFrame({
+            "date": pd.to_datetime(["2016-01-01"]),
+            "home_team": ["Brazil"],
+            "away_team": ["Argentina"],
+            "home_score": [1],
+            "away_score": [0],
+            "tournament": ["Friendly"],
+            "neutral": [False],
+            "is_world_cup": [0],
+        }),
+    ], ignore_index=True)
+
+    result = build_features(long_streak)
+    last = result.iloc[-1]
+    assert last["home_win_streak"] == 12   # raw streak is uncapped...
+    assert last["win_streak_diff"] == STREAK_DIFF_CAP   # ...but the diff feature is
+    assert last["unbeaten_streak_diff"] == STREAK_DIFF_CAP
 
 
 def test_rest_days_diff(matches):
