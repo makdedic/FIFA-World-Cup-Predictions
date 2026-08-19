@@ -151,7 +151,7 @@ st.dataframe(
         "win_streak": "Win streak",
         "unbeaten_streak": "Unbeaten streak",
     }),
-    use_container_width=True,
+    width="stretch",
     height=400,
     hide_index=True,
     column_config={"ELO": st.column_config.NumberColumn(format="%.0f")},
@@ -195,7 +195,7 @@ if h2h["total_matches"] > 0:
         "away_score": "Away score",
         "tournament": "Tournament",
     })
-    st.dataframe(recent_df, use_container_width=True, hide_index=True)
+    st.dataframe(recent_df, width="stretch", hide_index=True)
 else:
     st.caption("**Head-to-head**: no previous meetings in this dataset.")
 
@@ -301,7 +301,7 @@ if predict_clicked:
     labels = bars.mark_text(align="left", dx=6).encode(
         text=alt.Text("Probability:Q", format=".1%")
     )
-    st.altair_chart(bars + labels, use_container_width=True)
+    st.altair_chart(bars + labels, width="stretch")
 
     m1, m2, m3 = st.columns(3)
     m1.metric(f"{result['home_team']} win", f"{result['home_win_prob']:.1%}")
@@ -357,7 +357,7 @@ if predict_clicked:
         )
         .properties(height=230)
     )
-    st.altair_chart(contrib_chart, use_container_width=True)
+    st.altair_chart(contrib_chart, width="stretch")
 
 
 with st.expander("About this model"):
