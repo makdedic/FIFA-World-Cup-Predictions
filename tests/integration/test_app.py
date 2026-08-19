@@ -33,3 +33,11 @@ def test_app_renders_title_and_team_selectors(app):
     assert app.title[0].value == "⚽ World Cup Match Predictor"
     selectbox_keys = {sb.key for sb in app.selectbox}
     assert {"home_team", "away_team"} <= selectbox_keys
+
+
+def test_predict_button_runs_full_prediction_path(app):
+    """Clicking Predict exercises model loading, feature engineering, and
+    chart rendering — not just the initial page load."""
+    app.button[0].click().run(timeout=60)
+    assert not app.exception
+    assert len(app.subheader) >= 1
